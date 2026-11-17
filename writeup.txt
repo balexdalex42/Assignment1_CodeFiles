@@ -1,0 +1,66 @@
+CSE158 Assignment 1 - Written Report
+
+Code: recsys_lib.py (shared models), task1.py ... task6.py (train() / predict() per task),
+assignment1.ipynb (runs all tasks). Repo to said tasks:
+https://github.com/balexdalex42/Assignment1_CodeFiles
+
+General
+Every model was tuned on a practice set made to look like the real test: hide some interactions
+we already know the answer to, predict them, and check. For the "which book" tasks, the wrong
+option was picked the same way the test seems to pick it (popular books show up more often).
+Once tuned, each model is retrained on all the data. A rating of 0 means "not rated", so those
+rows are ignored, except in task 6 where they still show when someone read something.
+Note: Claude code helped reimplement much of the model training to make GPU-based training available.
+
+
+Task 1 - Rating
+Starting point: some users rate everything high, some books are rated high by everyone, and a
+latent factor model captures broad taste. The original Latent Factor Model did not perform too
+well, so had to consider training on certain potentially applicable patterns that might be
+related to rating. The biggest gain came from a simple intuition: to guess how you'll rate a book,
+look at how you rated the books most like it. If you gave the first two books of a series 5 stars,
+the third is probably a 5 too. So the model looks at the user's ratings of the most similar books
+(and of books people usually read right before or after this one), and at how similar readers
+rated this book. A small attention network learns this on its own: it looks over everything the
+user has rated and decides which past ratings matter most for this particular book.
+Claude code added the final combination step: a linear blend of all models and features with a small
+neural-network correction, fitted on 150k held-out ratings.
+
+Task 2 - Which item
+Each question is "which of these two books did the user read?". BPR learns a taste profile for
+each user and book from what they read. The most useful extra clue: is either book very close to
+something the user already read? One close match (say, the sequel of a book they read) is a much
+stronger sign than being loosely similar to their reading on average. Popularity helps too, since
+popular books are read more. A small neural network compares the two books side by side and picks
+one, built so that listing the books in the other order always gives the same answer.
+
+Task 3 - Rating with timestamp
+Same idea as Task 1, now knowing when the rating happened. I tried to test global time patterns
+and found that they barely mattered. What did matter is the user's mood around that moment: people
+often rate a batch of books on the same day, and those ratings tend to look alike. So the model
+looks at how the user was rating that day, month and year, and how other readers rated the book
+around then. The attention network also pays more attention to ratings the user gave close in time
+to this one; it is the single best model and gave the largest improvement. This was found through
+some experimentation.
+
+Task 4 - Which item with timestamp
+Task 2 plus timing clues. A book can't be read before it exists, and books have a popular phase,
+so a candidate that was barely being read at that date is unlikely. What the user was reading just
+before and just after that moment says a lot about what they read then (e.g. the middle book of a
+series), so the strongest model describes the user by those nearby books instead of their whole
+history.
+
+Task 5 - Next item
+Like Task 4, but only the past is known: what does the user read next? The best clues are books
+that people commonly read right after the user's last few books, similarity to what they have been
+reading recently, and what is popular at the moment. Unrated (0) books still count here, since
+they are still books the user read. The same side-by-side network makes the final choice.
+
+Task 6 - Time to next interaction
+Predicts how long until the user's next read. The error measure punishes being far off in either
+direction equally, so the model aims for the typical waiting time rather than the average (a few
+users who disappear for years would otherwise drag every guess up). Clues: how often the user
+usually reads and how active they've been lately, and how long other readers took to get to the
+next book, especially readers who went from the user's last book to that same next book. People
+tend to slow down near the end of their history, so predictions are stretched slightly to account
+for that.
